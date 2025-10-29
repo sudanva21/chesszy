@@ -9,7 +9,7 @@ import { getBotMove, BotDifficulty, calculatePointsChange } from '@/lib/bot'
 import { getCurrentUser, getUserProfile } from '@/lib/auth'
 import { getBotPersonality } from '@/lib/bot-names'
 import soundManager from '@/lib/sounds'
-import { Copy, Check, Users, Bot as BotIcon, Crown, ArrowLeft, Trophy, Box, Grid3x3 } from 'lucide-react'
+import { Copy, Check, Users, Bot as BotIcon, Crown, ArrowLeft, Trophy, Box, Grid3x3, RotateCcw } from 'lucide-react'
 
 const ChessBoard3D = dynamic(() => import('@/components/ChessBoard3D'), {
   ssr: false,
@@ -77,12 +77,15 @@ export default function GamePage() {
     setOpponentConnected,
     loadFen,
     makeMove: makeStoreMove,
+    undoMove,
+    moveHistory,
     resetGame,
   } = useGameStore()
   
   const [gameState, setGameState] = useState<GameState | null>(null)
   const [copied, setCopied] = useState(false)
   const [user, setUser] = useState<any>(null)
+  const [opponentUsername, setOpponentUsername] = useState<string>('Waiting...')
   const [botThinking, setBotThinking] = useState(false)
   const [showGameOver, setShowGameOver] = useState(false)
   const [gameResult, setGameResult] = useState<'win' | 'loss' | 'draw'>('draw')
@@ -103,6 +106,36 @@ export default function GamePage() {
   const checkUser = async () => {
     const currentUser = await getCurrentUser()
     setUser(currentUser)
+  }
+
+  // Fetch opponent's username
+  const fetchOpponentUsername = async (opponentId: string) => {
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('id', opponentId)
+        .single()
+      
+      if (data) {
+        setOpponentUsername(data.username)
+      }
+    } catch (error) {
+      console.error('Error fetching opponent username:', error)
+    }
+  }
+
+  // Handle undo move (only for bot games)
+  const handleUndo = () => {
+    if (!isBotGame) return // Only allow undo in bot games
+    if (moveHistory.length < 2) return // Need at least 2 moves (player + bot)
+    
+    // Undo bot's last move
+    undoMove()
+    // Undo player's last move
+    undoMove()
+    
+    soundManager.playMove() // Play sound feedback
   }
 
   // Save bot game to localStorage
@@ -223,6 +256,14 @@ export default function GamePage() {
               ? !!newState.black_player_id 
               : !!newState.white_player_id
             setOpponentConnected(hasOpponent)
+            
+            // Fetch opponent username when they connect
+            if (hasOpponent) {
+              const opponentId = isHost ? newState.black_player_id : newState.white_player_id
+              if (opponentId) {
+                fetchOpponentUsername(opponentId)
+              }
+            }
           }
         )
         .subscribe()
@@ -363,9 +404,16 @@ export default function GamePage() {
         setPlayerColor(userColor)
         setGameState(existing)
         loadFen(existing.fen)
-        setOpponentConnected(
-          userColor === 'white' ? !!existing.black_player_id : !!existing.white_player_id
-        )
+        const hasOpponent = userColor === 'white' ? !!existing.black_player_id : !!existing.white_player_id
+        setOpponentConnected(hasOpponent)
+        
+        // Fetch opponent username if they're connected
+        if (hasOpponent) {
+          const opponentId = userColor === 'white' ? existing.black_player_id : existing.white_player_id
+          if (opponentId) {
+            fetchOpponentUsername(opponentId)
+          }
+        }
         return
       }
 
@@ -413,6 +461,12 @@ export default function GamePage() {
         setGameState(data)
         loadFen(data.fen)
         setOpponentConnected(true)
+        
+        // Fetch host's username
+        const hostId = joinAsColor === 'white' ? data.black_player_id : data.white_player_id
+        if (hostId) {
+          fetchOpponentUsername(hostId)
+        }
       }
 
       console.log('=== JOIN SUCCESS ===')
@@ -560,7 +614,8 @@ export default function GamePage() {
   const saveBotGameHistory = async (winner: string | null) => {
     if (!user || !botPersonality) return
 
-    const result = winner === 'draw' ? 'draw' : (winner === 'white' ? 'win' : 'loss')
+    // Fix: Check if winner matches player's color, not just 'white'
+    const result = winner === 'draw' ? 'draw' : (winner === selectedColor ? 'win' : 'loss')
 
     await supabase
       .from('match_history')
@@ -721,9 +776,14 @@ export default function GamePage() {
               <div className="bg-white/10 backdrop-blur-md rounded-lg px-3 sm:px-4 py-2 border border-white/20 flex-1 sm:flex-initial">
                 <div className="flex items-center gap-2 justify-center sm:justify-start">
                   <Users className={`w-4 h-4 sm:w-5 sm:h-5 ${opponentConnected ? 'text-green-400' : 'text-yellow-400'}`} />
-                  <span className="text-white font-medium text-sm sm:text-base">
-                    {opponentConnected ? 'Opponent Connected' : 'Waiting for Opponent...'}
-                  </span>
+                  <div className="flex flex-col">
+                    <span className="text-white font-medium text-sm sm:text-base">
+                      {opponentConnected ? opponentUsername : 'Waiting for Opponent...'}
+                    </span>
+                    {opponentConnected && (
+                      <span className="text-green-300 text-xs">Connected</span>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -734,7 +794,7 @@ export default function GamePage() {
           {/* Game Board */}
           <div className="lg:col-span-2 order-1">
             {/* Board View Toggle */}
-            <div className="flex justify-center gap-2 mb-3 sm:mb-4">
+            <div className="flex justify-center gap-2 mb-3 sm:mb-4 flex-wrap">
               <button
                 onClick={() => setBoardView('3d')}
                 className={`
@@ -761,6 +821,24 @@ export default function GamePage() {
                 <Grid3x3 className="w-4 h-4 sm:w-5 sm:h-5" />
                 <span>2D Board</span>
               </button>
+              
+              {/* Undo Button - Only for Bot Games */}
+              {isBotGame && !chess.isGameOver() && (
+                <button
+                  onClick={handleUndo}
+                  disabled={moveHistory.length < 2 || botThinking}
+                  className={`
+                    flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-3 rounded-xl font-semibold text-sm sm:text-base
+                    transition-all transform active:scale-95 touch-manipulation
+                    ${moveHistory.length < 2 || botThinking
+                      ? 'bg-gray-500/20 text-gray-400 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-lg hover:from-purple-600 hover:to-pink-700'}
+                  `}
+                >
+                  <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <span>Undo Move</span>
+                </button>
+              )}
             </div>
 
             {/* Chess Board */}

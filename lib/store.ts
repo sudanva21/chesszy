@@ -9,6 +9,7 @@ interface GameStore {
   gameCode: string | null
   isHost: boolean
   opponentConnected: boolean
+  moveHistory: string[] // Store FEN strings for undo
   
   setSelectedSquare: (square: string | null) => void
   setValidMoves: (moves: string[]) => void
@@ -17,6 +18,7 @@ interface GameStore {
   setIsHost: (isHost: boolean) => void
   setOpponentConnected: (connected: boolean) => void
   makeMove: (from: string, to: string) => boolean
+  undoMove: () => boolean
   resetGame: () => void
   loadFen: (fen: string) => void
 }
@@ -29,6 +31,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   gameCode: null,
   isHost: false,
   opponentConnected: false,
+  moveHistory: [],
 
   setSelectedSquare: (square) => set({ selectedSquare: square }),
   
@@ -43,11 +46,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setOpponentConnected: (connected) => set({ opponentConnected: connected }),
   
   makeMove: (from, to) => {
-    const { chess } = get()
+    const { chess, moveHistory } = get()
     try {
+      // Save current position before making move
+      const currentFen = chess.fen()
+      
       const move = chess.move({ from, to, promotion: 'q' })
       if (move) {
-        set({ chess: new Chess(chess.fen()) })
+        // Add current position to history
+        set({ 
+          chess: new Chess(chess.fen()),
+          moveHistory: [...moveHistory, currentFen]
+        })
         return true
       }
       return false
@@ -56,10 +66,31 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
   
+  undoMove: () => {
+    const { moveHistory } = get()
+    if (moveHistory.length === 0) return false
+    
+    // Get the previous position
+    const previousFen = moveHistory[moveHistory.length - 1]
+    const newHistory = moveHistory.slice(0, -1)
+    
+    // Load previous position
+    const newChess = new Chess()
+    newChess.load(previousFen)
+    
+    set({ 
+      chess: newChess,
+      moveHistory: newHistory
+    })
+    
+    return true
+  },
+  
   resetGame: () => set({ 
     chess: new Chess(),
     selectedSquare: null,
     validMoves: [],
+    moveHistory: [],
   }),
   
   loadFen: (fen) => {
