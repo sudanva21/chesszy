@@ -182,6 +182,12 @@ export default function GamePage() {
       // Bot game setup handled by separate useEffect checking for saved games
       // Don't reset here, let the saved game check happen first
     } else {
+      // Wait for user to be loaded before setting up multiplayer
+      if (!user) {
+        console.log('Waiting for user to load...')
+        return
+      }
+
       // Multiplayer game setup - reset board for fresh game
       resetGame()
       if (isHost) {
@@ -225,7 +231,7 @@ export default function GamePage() {
         supabase.removeChannel(channel)
       }
     }
-  }, [gameCode, isHost, isBotGame])
+  }, [gameCode, isHost, isBotGame, user])
 
   // Bot move logic
   useEffect(() => {
@@ -315,34 +321,59 @@ export default function GamePage() {
   const joinMultiplayerGame = async () => {
     if (!user) {
       console.log('Cannot join: No user logged in')
+      alert('Please log in to join the game.')
+      router.push('/')
       return
     }
 
-    console.log('Attempting to join game with code:', gameCode)
+    console.log('=== JOIN GAME DEBUG ===')
+    console.log('User ID:', user.id)
+    console.log('Game code:', gameCode)
+    console.log('Attempting to join game...')
 
-    const { data: existing, error: fetchError } = await supabase
-      .from('games')
-      .select()
-      .eq('game_code', gameCode)
-      .maybeSingle()
+    try {
+      // Query for game with the code - use select('*') to get all fields
+      const { data: existing, error: fetchError } = await supabase
+        .from('games')
+        .select('*')
+        .eq('game_code', gameCode)
+        .maybeSingle()
 
-    console.log('Existing game query result:', { existing, fetchError })
+      console.log('Query result:', { existing, fetchError })
 
-    if (fetchError) {
-      console.error('Error fetching game:', fetchError)
-      return
-    }
+      if (fetchError) {
+        console.error('Database error:', fetchError)
+        alert(`Database error: ${fetchError.message}`)
+        return
+      }
 
-    if (!existing) {
-      console.error('Game not found in database')
-      alert('Game not found! Please check the code.')
-      return
-    }
+      if (!existing) {
+        console.error('Game not found in database')
+        console.log('This means no game with code:', gameCode, 'exists')
+        alert(`Game not found! Please check the code: ${gameCode}`)
+        return
+      }
 
-    if (existing) {
+      console.log('✓ Game found:', existing)
+
+      // Check if user is already in this game
+      if (existing.white_player_id === user.id || existing.black_player_id === user.id) {
+        console.log('User is already in this game')
+        const userColor = existing.white_player_id === user.id ? 'white' : 'black'
+        setPlayerColor(userColor)
+        setGameState(existing)
+        loadFen(existing.fen)
+        setOpponentConnected(
+          userColor === 'white' ? !!existing.black_player_id : !!existing.white_player_id
+        )
+        return
+      }
+
       // Determine which color to join as (opposite of host)
       const isWhiteTaken = existing.white_player_id !== null
       const isBlackTaken = existing.black_player_id !== null
+      
+      console.log('White taken:', isWhiteTaken, 'Black taken:', isBlackTaken)
       
       let joinAsColor: 'white' | 'black'
       if (!isWhiteTaken) {
@@ -350,16 +381,19 @@ export default function GamePage() {
       } else if (!isBlackTaken) {
         joinAsColor = 'black'
       } else {
-        alert('Game is full!')
+        console.error('Game is full - both colors taken')
+        alert('Game is full! Both players have joined.')
         return
       }
 
-      console.log(`Found game, joining as ${joinAsColor} player...`)
+      console.log(`✓ Joining as ${joinAsColor} player...`)
       setPlayerColor(joinAsColor)
       
       const updateData = joinAsColor === 'white' 
         ? { white_player_id: user.id, status: 'playing' }
         : { black_player_id: user.id, status: 'playing' }
+
+      console.log('Updating game with:', updateData)
 
       const { data, error } = await supabase
         .from('games')
@@ -368,15 +402,23 @@ export default function GamePage() {
         .select()
         .single()
 
-      if (data) {
-        console.log('Successfully joined game:', data)
-        setGameState(data)
-        loadFen(data.fen)
-      }
       if (error) {
         console.error('Error updating game:', error)
         alert(`Failed to join game: ${error.message}`)
+        return
       }
+
+      if (data) {
+        console.log('✓ Successfully joined game:', data)
+        setGameState(data)
+        loadFen(data.fen)
+        setOpponentConnected(true)
+      }
+
+      console.log('=== JOIN SUCCESS ===')
+    } catch (error) {
+      console.error('Unexpected error joining game:', error)
+      alert(`An error occurred: ${error}`)
     }
   }
 
