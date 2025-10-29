@@ -9,29 +9,17 @@ export default function Icon() {
     (
       <div
         style={{
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          fontSize: 24,
+          background: '#1e293b',
           width: '100%',
           height: '100%',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          borderRadius: '6px',
-          boxShadow: '0 4px 14px 0 rgba(0,0,0,0.25)',
+          color: 'white',
         }}
       >
-        <div
-          style={{
-            fontSize: 26,
-            fontWeight: 'bold',
-            color: 'white',
-            textShadow: '0 2px 4px rgba(0,0,0,0.3)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          ♞
-        </div>
+        ♟
       </div>
     ),
     {

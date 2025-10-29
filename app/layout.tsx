@@ -7,12 +7,6 @@ const inter = Inter({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: '3D Chess Multiplayer',
   description: 'Play chess online with friends in stunning 3D',
-  themeColor: '#667eea',
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: 'default',
-    title: '3D Chess',
-  },
 }
 
 export const viewport: Viewport = {
