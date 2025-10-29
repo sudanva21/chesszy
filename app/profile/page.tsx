@@ -6,6 +6,18 @@ import { ArrowLeft, UserCircle, Edit, Trophy, Target, TrendingUp, Upload, Camera
 import { getCurrentUser, getUserProfile, updateProfile } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 
+interface Profile {
+  id: string
+  username: string
+  avatar_url?: string
+  points: number
+  games_played: number
+  games_won: number
+  games_lost: number
+  games_drawn: number
+  created_at: string
+}
+
 interface MatchHistoryEntry {
   id: string
   opponent_name: string
@@ -19,7 +31,7 @@ interface MatchHistoryEntry {
 export default function ProfilePage() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
-  const [profile, setProfile] = useState<any>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
   const [matchHistory, setMatchHistory] = useState<MatchHistoryEntry[]>([])
   const [editing, setEditing] = useState(false)
   const [newUsername, setNewUsername] = useState('')
@@ -77,8 +89,9 @@ export default function ProfilePage() {
           filter: `id=eq.${user.id}`,
         },
         (payload) => {
-          setProfile(payload.new)
-          setAvatarUrl(payload.new.avatar_url)
+          const newProfile = payload.new as Profile
+          setProfile(newProfile)
+          setAvatarUrl(newProfile.avatar_url || null)
         }
       )
       .subscribe()
@@ -136,7 +149,9 @@ export default function ProfilePage() {
       // Update profile with avatar URL
       await updateProfile(user.id, { avatar_url: data.publicUrl })
       setAvatarUrl(data.publicUrl)
-      setProfile({ ...profile, avatar_url: data.publicUrl })
+      if (profile) {
+        setProfile({ ...profile, avatar_url: data.publicUrl })
+      }
     } catch (error) {
       console.error('Error uploading avatar:', error)
       alert('Error uploading avatar. Please try again.')
@@ -150,7 +165,9 @@ export default function ProfilePage() {
 
     try {
       await updateProfile(user.id, { username: newUsername.trim() })
-      setProfile({ ...profile, username: newUsername.trim() })
+      if (profile) {
+        setProfile({ ...profile, username: newUsername.trim() })
+      }
       setEditing(false)
     } catch (error) {
       console.error('Error updating username:', error)
